@@ -1,0 +1,27 @@
+[general]
+name=LISFLOOD-FP
+qgisMinimumVersion=3.28
+qgisMaximumVersion=4.99
+description=Build, run and map LISFLOOD-FP hydraulic flood inundation models
+version=0.1.0
+author=Sim Reaney
+email=sim.reaney@durham.ac.uk
+
+about=Drives the LISFLOOD-FP 2D hydraulic flood model from QGIS. Builds the model deck
+    from your layers (DEM, Manning's n, boundary points, rainfall, time series), runs
+    the model with live progress and cancellation, and loads the results as styled,
+    georeferenced layers wired to the temporal controller.
+    The plugin does not distribute LISFLOOD-FP itself; it compiles or locates a copy
+    from your own source checkout.
+
+tracker=https://github.com/SEAMLESS-WAVE/LISFLOOD-FP/issues
+repository=https://github.com/SEAMLESS-WAVE/LISFLOOD-FP
+homepage=https://www.seamlesswave.com/
+
+tags=hydrology,flood,inundation,hydraulic,raster,lisflood,modelling
+
+category=Analysis
+icon=icons/lisflood.svg
+experimental=True
+deprecated=False
+hasProcessingProvider=yes
