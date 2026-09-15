@@ -232,16 +232,6 @@ builder does not generate; run those from a hand-written deck.
 **Sub-grid channels** (`SGCwidth` and friends) and **weirs** can be supplied through the
 advanced keyword field, but have no dedicated UI.
 
-## A note on this machine's environment
-
-`GDAL_DRIVER_PATH` is set to `~/miniconda/lib/gdalplugins`, whose plugins are signed by
-a different team and built against a different GDAL. That is the source of the
-`dlopen ... not valid for use in process` and `Cannot find proj.db` messages you may see
-in QGIS. The plugin strips these variables from the model's environment, and tolerates
-the failure when enabling GDAL exceptions, so it does not affect model runs — but QGIS
-itself is still affected. Unsetting `GDAL_DRIVER_PATH` in your shell profile would clear
-it up.
-
 ## Testing
 
 The `core/` package has no QGIS imports, so it tests under any Python:
