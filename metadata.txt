@@ -1,9 +1,9 @@
 [general]
-name=LISFLOOD-FP
+name=QGIS-LISFLOOD-FP
 qgisMinimumVersion=3.28
 qgisMaximumVersion=4.99
 description=Build, run and map LISFLOOD-FP hydraulic flood inundation models
-version=0.1.0
+version=0.1.3
 author=Sim Reaney
 email=sim.reaney@durham.ac.uk
 
@@ -14,9 +14,24 @@ about=Drives the LISFLOOD-FP 2D hydraulic flood model from QGIS. Builds the mode
     The plugin does not distribute LISFLOOD-FP itself; it compiles or locates a copy
     from your own source checkout.
 
-tracker=https://github.com/SEAMLESS-WAVE/LISFLOOD-FP/issues
-repository=https://github.com/SEAMLESS-WAVE/LISFLOOD-FP
-homepage=https://www.seamlesswave.com/
+tracker=https://github.com/simreaney/QGIS-LISFLOOD-FP/issues
+repository=https://github.com/simreaney/QGIS-LISFLOOD-FP
+homepage=https://github.com/simreaney/QGIS-LISFLOOD-FP
+
+changelog=
+    0.1.3
+    - Typo correction
+    0.1.2
+    - Hardware checks (CPU architecture, performance-core count) read the value
+      directly from macOS instead of running the sysctl tool
+    - LISFLOOD-FP and CMake are only ever launched from a full executable path
+    - A GDAL set-up problem at start-up is now logged instead of silently ignored
+    0.1.1
+    - Tests no longer use assert statements, which the QGIS plugin validator rejects
+      and optimised byte code strips out
+    0.1.0
+    - First public release: build, run and map LISFLOOD-FP models from QGIS
+    - Tracker, repository and homepage now point to the plugin's own GitHub repository
 
 tags=hydrology,flood,inundation,hydraulic,raster,lisflood,modelling
 
@@ -25,3 +40,4 @@ icon=icons/lisflood.svg
 experimental=True
 deprecated=False
 hasProcessingProvider=yes
+

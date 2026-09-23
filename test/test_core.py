@@ -8,60 +8,67 @@ from core.progress import classify, MassProgress
 from core.results import died_on_signal, discover
 
 
+def check(condition, message="check failed"):
+    # explicit raise rather than assert, which python -O strips (and the QGIS
+    # plugin validator rejects)
+    if not condition:
+        raise AssertionError(message)
+
+
 def test_keyword_registry():
-    assert kw.canonical("SIM_TIME") == "sim_time"      # case-insensitive
-    assert kw.canonical("dir") == "dirroot"            # alias resolves
-    assert kw.canonical("nfp") == "fpfric"
-    assert kw.canonical("SGClevee") is None            # commented out in pars.cpp
-    assert "sim_time" in kw.suggest("sim_tme")
-    assert "log" in kw.DENIED and "gzip" in kw.DENIED
+    check(kw.canonical("SIM_TIME") == "sim_time")      # case-insensitive
+    check(kw.canonical("dir") == "dirroot")            # alias resolves
+    check(kw.canonical("nfp") == "fpfric")
+    check(kw.canonical("SGClevee") is None)            # commented out in pars.cpp
+    check("sim_time" in kw.suggest("sim_tme"))
+    check("log" in kw.DENIED and "gzip" in kw.DENIED)
 
 
 def test_discharge_conversion_roundtrip():
     # the model multiplies by cellsize, so the deck value is per metre
-    assert bc.to_model_discharge(100.0, 50.0) == 2.0
-    assert bc.to_model_discharge(100.0, 50.0, 4) == 0.5
-    assert abs(bc.from_model_discharge(bc.to_model_discharge(73.0, 25.0), 25.0) - 73.0) < 1e-9
+    check(bc.to_model_discharge(100.0, 50.0) == 2.0)
+    check(bc.to_model_discharge(100.0, 50.0, 4) == 0.5)
+    check(abs(bc.from_model_discharge(bc.to_model_discharge(73.0, 25.0), 25.0) - 73.0) < 1e-9)
 
 
 def test_bdy_writes_value_before_time():
     d = tempfile.mkdtemp()
     s = bc.Series("inflow", "seconds", [0, 3600], [10.0, 50.0])
     rows = open(bc.write_bdy(os.path.join(d, "a.bdy"), [s])).read().splitlines()
-    assert rows[0].startswith("#")          # exactly one skipped comment line
-    assert rows[1] == "inflow"
-    assert rows[2] == "2\tseconds"
-    assert rows[3].split() == ["10", "0"]   # value first, then time
-    assert rows[4].split() == ["50", "3600"]
+    check(rows[0].startswith("#"))          # exactly one skipped comment line
+    check(rows[1] == "inflow")
+    check(rows[2] == "2\tseconds")
+    check(rows[3].split() == ["10", "0"])   # value first, then time
+    check(rows[4].split() == ["50", "3600"])
 
 
 def test_series_validation_catches_the_traps():
     bad_time = bc.Series("q", "seconds", [0, 100, 100], [1, 2, 3])
-    assert any("non-increasing" in p for p in bc.validate_series(bad_time))
+    check(any("non-increasing" in p for p in bc.validate_series(bad_time)))
     bad_units = bc.Series("q", "hrs", [0, 1], [1, 2])
-    assert any("not recognised" in p for p in bc.validate_series(bad_units))
+    check(any("not recognised" in p for p in bc.validate_series(bad_units)))
     short = bc.Series("q", "seconds", [0, 10], [1, 2])
-    assert any(p.startswith("WARN") for p in bc.validate_series(short, sim_time=1000))
+    check(any(p.startswith("WARN") for p in bc.validate_series(short, sim_time=1000)))
 
 
 def test_cross_validate_catches_name_mismatch():
     s = [bc.Series("Inflow", "seconds", [0, 1], [1, 2])]
     p = [bc.PointBC(1, 2, "QVAR", None, "inflow")]        # differs only in case
-    assert any("not in the .bdy" in m for m in bc.cross_validate(p, [], s))
+    check(any("not in the .bdy" in m for m in bc.cross_validate(p, [], s)))
 
 
 def test_grid_geometry():
-    assert_dem = os.path.join(os.path.dirname(__file__), "..", "..", "..",
+    dem_path = os.path.join(os.path.dirname(__file__), "..", "..", "..",
                               "LISFLOOD-FP-code", "testing", "T001_buscot",
                               "buscot.dem.ascii")
-    if os.path.exists(assert_dem):
-        spec = gridio.read_header(assert_dem)
-        assert (spec.ncols, spec.nrows, spec.cellsize) == (76, 48, 50.0)
-        assert gridio.qx_spec(spec).ncols == spec.ncols + 1
-        assert gridio.qy_spec(spec).nrows == spec.nrows + 1
+    if os.path.exists(dem_path):
+        spec = gridio.read_header(dem_path)
+        check((spec.ncols, spec.nrows, spec.cellsize) == (76, 48, 50.0))
+        check(gridio.qx_spec(spec).ncols == spec.ncols + 1)
+        check(gridio.qy_spec(spec).nrows == spec.nrows + 1)
     try:
         gridio.spec_from_geotransform((0, 50, 0, 1000, 0, -25), 10, 10)
-        assert False, "non-square cells must be rejected"
+        raise AssertionError("non-square cells must be rejected")
     except gridio.NonSquareCellsError:
         pass
 
@@ -73,10 +80,10 @@ def test_par_validation():
     p._entries["log"] = None             # denied
     p._entries["routing"] = None         # needs acceleration/SGC
     msgs = [str(i) for i in p.validate()]
-    assert any("sim_time" in m for m in msgs)
-    assert any("space" in m for m in msgs)
-    assert any("log" in m for m in msgs)
-    assert any("routing" in m for m in msgs)
+    check(any("sim_time" in m for m in msgs))
+    check(any("space" in m for m in msgs))
+    check(any("log" in m for m in msgs))
+    check(any("routing" in m for m in msgs))
 
 
 def test_par_roundtrip():
@@ -84,22 +91,22 @@ def test_par_roundtrip():
     p = ParFile().set("DEMfile", "dem.asc").set("sim_time", 1000).set("acceleration")
     path = p.write(os.path.join(d, "m.par"))
     q = ParFile.parse(path)
-    assert q.get("DEMfile") == "dem.asc"
-    assert q.get("sim_time") == "1000"
-    assert q.has("acceleration")
+    check(q.get("DEMfile") == "dem.asc")
+    check(q.get("sim_time") == "1000")
+    check(q.has("acceleration"))
 
 
 def test_progress_classification():
     k, d = classify("T(mins): M: 500.0, C: 5.3, M/C: 94.94, ETot: 17.6, EFin: 12.3")
-    assert k == "progress" and d["efin"] == 12.3
+    check(k == "progress" and d["efin"] == 12.3)
     k, d = classify("Unknown parameter ignored: sim_tme.")
-    assert k == "warn" and d["keyword"] == "sim_tme"
-    assert classify("ERROR: Loading DEM. Aborting.")[0] == "error"
+    check(k == "warn" and d["keyword"] == "sim_tme")
+    check(classify("ERROR: Loading DEM. Aborting.")[0] == "error")
 
 
 def test_signal_detection():
-    assert died_on_signal(139) and died_on_signal(-11)
-    assert not died_on_signal(0) and not died_on_signal(1)
+    check(died_on_signal(139) and died_on_signal(-11))
+    check(not died_on_signal(0) and not died_on_signal(1))
 
 
 def test_qvar_series_needs_conversion_too():
@@ -112,17 +119,17 @@ def test_qvar_series_needs_conversion_too():
     cellsize = 10.0
     hydrograph = [0.0, 40.0, 0.0]                       # m3/s, as a user thinks of it
     converted = [bc.to_model_discharge(q, cellsize) for q in hydrograph]
-    assert converted == [0.0, 4.0, 0.0]
+    check(converted == [0.0, 4.0, 0.0])
     # what the model then applies internally is value * cellsize
-    assert [v * cellsize for v in converted] == hydrograph
+    check([v * cellsize for v in converted] == hydrograph)
 
 
 def test_edge_series_conversion_uses_cell_count():
     spec = gridio.GridSpec(60, 60, 0.0, 0.0, 10.0, -9999.0)
     n = bc.edge_cell_count("W", 0.0, 600.0, spec)
-    assert n == 60
+    check(n == 60)
     # 40 m3/s spread over the whole 60-cell edge
-    assert bc.to_model_discharge(40.0, spec.cellsize, n) == 40.0 / 600.0
+    check(bc.to_model_discharge(40.0, spec.cellsize, n) == 40.0 / 600.0)
 
 
 def test_lowest_edge_cell_ignores_interior_minimum():
@@ -136,7 +143,7 @@ def test_lowest_edge_cell_ignores_interior_minimum():
     spec = gridio.GridSpec(ncols=5, nrows=4, xll=0.0, yll=0.0, cellsize=10.0, nodata=-9999.0)
     # 0.5 is the lowest cell in the whole grid but sits in the interior, where
     # LISFLOOD-FP cannot apply a boundary condition at all -- must be ignored.
-    assert bc.lowest_edge_cell(spec, elev, spec.nodata) == ("S", 3, 2)
+    check(bc.lowest_edge_cell(spec, elev, spec.nodata) == ("S", 3, 2))
 
 
 def test_lowest_edge_cell_skips_nodata():
@@ -146,13 +153,13 @@ def test_lowest_edge_cell_skips_nodata():
         [-9999,     1, -9999],   # south edge, the only real candidate
     ]
     spec = gridio.GridSpec(ncols=3, nrows=3, xll=0.0, yll=0.0, cellsize=1.0, nodata=-9999.0)
-    assert bc.lowest_edge_cell(spec, elev, spec.nodata) == ("S", 2, 1)
+    check(bc.lowest_edge_cell(spec, elev, spec.nodata) == ("S", 2, 1))
 
 
 def test_lowest_edge_cell_all_nodata_returns_none():
     elev = [[-9999, -9999], [-9999, -9999]]
     spec = gridio.GridSpec(ncols=2, nrows=2, xll=0.0, yll=0.0, cellsize=1.0, nodata=-9999.0)
-    assert bc.lowest_edge_cell(spec, elev, spec.nodata) is None
+    check(bc.lowest_edge_cell(spec, elev, spec.nodata) is None)
 
 
 def test_outflow_edge_bc_geometry_matches_cell():
@@ -160,16 +167,16 @@ def test_outflow_edge_bc_geometry_matches_cell():
     all_valid = [[0.0] * spec.ncols for _ in range(spec.nrows)]
     # south edge, column 2 -> x in [20, 30)
     single = bc.outflow_edge_bc(spec, "S", 3, 2, all_valid, spec.nodata, width=1)
-    assert (single.edge, single.start, single.finish, single.type) == ("S", 20.0, 30.0, "FREE")
-    assert single.value is None and single.series is None   # local water-surface slope
+    check((single.edge, single.start, single.finish, single.type) == ("S", 20.0, 30.0, "FREE"))
+    check(single.value is None and single.series is None)   # local water-surface slope
 
     # widening keeps it centred on the same cell
     wide = bc.outflow_edge_bc(spec, "S", 3, 2, all_valid, spec.nodata, width=3)
-    assert (wide.start, wide.finish) == (10.0, 40.0)
+    check((wide.start, wide.finish) == (10.0, 40.0))
 
     # west edge, row 1 (north-to-south indexing) -> y in [20, 30)
     west = bc.outflow_edge_bc(spec, "W", 1, 0, all_valid, spec.nodata, width=1)
-    assert (west.start, west.finish) == (20.0, 30.0)
+    check((west.start, west.finish) == (20.0, 30.0))
 
 
 def test_outflow_edge_bc_does_not_widen_into_nodata():
@@ -184,15 +191,15 @@ def test_outflow_edge_bc_does_not_widen_into_nodata():
     elev = [[-9999, -9999, 5.0, 4.0, -9999, -9999]]
     bc_edge = bc.outflow_edge_bc(spec, "S", 0, 3, elev, spec.nodata, width=4)
     # requested 4 cells, but only 2 (columns 2-3, x in [20, 40)) are real data
-    assert (bc_edge.start, bc_edge.finish) == (20.0, 40.0)
-    assert bc.edge_cell_count("S", bc_edge.start, bc_edge.finish, spec) == 2
+    check((bc_edge.start, bc_edge.finish) == (20.0, 40.0))
+    check(bc.edge_cell_count("S", bc_edge.start, bc_edge.finish, spec) == 2)
 
 
 def test_par_blocks_gpu_keywords_without_cuda():
     p = ParFile()
     p._entries["cuda"] = None
     msgs = [str(i) for i in p.validate(caps={"cuda": False})]
-    assert any("CUDA" in m for m in msgs)
+    check(any("CUDA" in m for m in msgs))
 
 
 # --- 1D channel network -----------------------------------------------------
@@ -213,14 +220,14 @@ def test_river_reproduces_reference_structure():
         [P(10000, 1050, 1000, 0.035, 9.65685, "QFIX", 200.0), P(8050, 1050),
          P(6050, 3050, 1000, 0.035, 4.82843, "QOUT", 2)],
     ]
-    assert validate(segs) == []
+    check(validate(segs) == [])
     d = tempfile.mkdtemp()
     lines = open(write_river(os.path.join(d, "t.river"), segs)).read().splitlines()
-    assert lines[0] == "Tribs 4"
-    assert lines[1] == "4"                     # segment 0 point count
-    assert lines[2].split()[2:] == ["1000", "0.035", "10", "QFIX", "200"]
-    assert lines[3].split()[2:] == ["TRIB", "1"]       # no geometry, BC only
-    assert lines[6] == "3"                     # segment 1 point count
+    check(lines[0] == "Tribs 4")
+    check(lines[1] == "4")                     # segment 0 point count
+    check(lines[2].split()[2:] == ["1000", "0.035", "10", "QFIX", "200"])
+    check(lines[3].split()[2:] == ["TRIB", "1"])       # no geometry, BC only
+    check(lines[6] == "3")                     # segment 1 point count
 
 
 def test_river_file_ends_with_newline():
@@ -229,7 +236,7 @@ def test_river_file_ends_with_newline():
     d = tempfile.mkdtemp()
     path = write_river(os.path.join(d, "t.river"),
                        [[P(0, 0, 10, 0.03, 5, "QFIX", 1.0), P(50, 0, 10, 0.03, 4)]])
-    assert open(path, "rb").read().endswith(b"\n")
+    check(open(path, "rb").read().endswith(b"\n"))
 
 
 def test_river_rejects_unanswered_junction():
@@ -237,20 +244,20 @@ def test_river_rejects_unanswered_junction():
     segs = [[P(0, 0, 10, 0.03, 5, "QFIX", 10.0), P(100, 0, 10, 0.03, 4, "QOUT", 1)],
             [P(0, 100, 10, 0.03, 5, "QFIX", 10.0), P(200, 200, 10, 0.03, 4, "HFIX", 1.0)]]
     problems = validate(segs)
-    assert any("no point at those coordinates" in p for p in problems)
+    check(any("no point at those coordinates" in p for p in problems))
 
 
 def test_river_rejects_bad_segment_reference():
     from core.river import point as P, validate
     segs = [[P(0, 0, 10, 0.03, 5, "QFIX", 1.0), P(50, 0, 10, 0.03, 4, "QOUT", 7)]]
-    assert any("only 1 segments" in p for p in validate(segs))
+    check(any("only 1 segments" in p for p in validate(segs)))
 
 
 def test_river_rejects_partial_geometry():
     from core.river import point as P, RiverError
     try:
         P(0, 0, width=10)                      # n and bed missing
-        assert False, "partial cross-section geometry must be rejected"
+        raise AssertionError("partial cross-section geometry must be rejected")
     except RiverError:
         pass
 
@@ -259,4 +266,4 @@ def test_channel_discharge_is_not_converted():
     """Channel Q is m3/s; only .bci discharge is per metre of cell width."""
     from core.river import point as P, format_point
     line = format_point(P(0, 0, 20, 0.035, 10, "QFIX", 30.0))
-    assert line.split()[-2:] == ["QFIX", "30"]     # written through unchanged
+    check(line.split()[-2:] == ["QFIX", "30"])     # written through unchanged

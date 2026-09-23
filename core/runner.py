@@ -19,7 +19,7 @@ QGIS 3.x on Apple Silicon runs under Rosetta while the model binary is native ar
 
 import os
 import re
-import subprocess
+import subprocess  # nosec B404 - used only to launch LISFLOOD-FP and CMake
 
 #: Variables removed from the child environment before launching the model.
 SCRUB = (
@@ -37,6 +37,29 @@ class RunnerError(Exception):
     pass
 
 
+def _sysctl_int(name):
+    """Read an integer sysctl on macOS, or None if it is unavailable.
+
+    Called through libc rather than by running the `sysctl` tool, so no child
+    process is needed just to ask the kernel about the hardware.
+    """
+    import ctypes
+    import ctypes.util
+    import platform
+    if platform.system() != "Darwin":
+        return None
+    try:
+        libc = ctypes.CDLL(ctypes.util.find_library("c"))
+    except OSError:
+        return None
+    value = ctypes.c_int64(0)       # large enough for both int and int64 sysctls
+    size = ctypes.c_size_t(ctypes.sizeof(value))
+    if libc.sysctlbyname(name.encode("ascii"), ctypes.byref(value),
+                         ctypes.byref(size), None, ctypes.c_size_t(0)) != 0:
+        return None
+    return value.value
+
+
 def host_arch():
     """The machine's real CPU architecture.
 
@@ -48,13 +71,8 @@ def host_arch():
     import platform
     if platform.system() != "Darwin":
         return platform.machine()
-    try:
-        out = subprocess.run(["sysctl", "-n", "hw.optional.arm64"],
-                             capture_output=True, text=True, timeout=5)
-        if out.returncode == 0 and out.stdout.strip() == "1":
-            return "arm64"
-    except (OSError, subprocess.SubprocessError):
-        pass
+    if _sysctl_int("hw.optional.arm64") == 1:
+        return "arm64"
     return platform.machine()
 
 
@@ -77,7 +95,7 @@ def find_built_binary(build_dir):
         candidates.append(os.path.join(build_dir, config, name))
     for path in candidates:
         if os.path.exists(path):
-            return path
+            return os.path.abspath(path)
     return None
 
 
@@ -99,6 +117,9 @@ def build_env(base=None, threads=None, binary=None):
 
 def build_command(binary, par_path, extra_args=(), verbose=True):
     """Assemble argv. The .par always goes last."""
+    if not os.path.isabs(binary):
+        raise RunnerError(
+            "The LISFLOOD-FP executable must be given as a full path, not %r." % binary)
     par_name = os.path.basename(par_path)
     if par_name.startswith("-"):
         raise RunnerError(
@@ -118,13 +139,9 @@ def default_threads():
     The model's inner loop has an OpenMP barrier every timestep, so scheduling work
     onto efficiency cores makes every performance core wait for the slowest.
     """
-    try:
-        out = subprocess.run(["sysctl", "-n", "hw.perflevel0.physicalcpu"],
-                             capture_output=True, text=True, timeout=5)
-        if out.returncode == 0 and out.stdout.strip().isdigit():
-            return max(1, int(out.stdout.strip()))
-    except (OSError, subprocess.SubprocessError):
-        pass
+    perf_cores = _sysctl_int("hw.perflevel0.physicalcpu")
+    if perf_cores:
+        return max(1, perf_cores)
     return max(1, (os.cpu_count() or 2) - 2)
 
 
@@ -160,13 +177,18 @@ def probe(binary, timeout=20):
     Raises RunnerError if the binary does not identify itself as LISFLOOD-FP, so a
     wrong path can never be silently accepted.
     """
-    if not binary or not os.path.exists(binary):
+    if binary and not os.path.isabs(binary):
+        raise RunnerError(
+            "The LISFLOOD-FP executable must be given as a full path, not %r." % binary)
+    if not binary or not os.path.isfile(binary):
         raise RunnerError("No LISFLOOD-FP executable at %r." % binary)
     if not os.access(binary, os.X_OK):
         raise RunnerError(
             "%r is not executable. Run: chmod +x %s" % (binary, binary))
     try:
-        proc = subprocess.run([binary, "-v", "-version"],
+        # the binary is an absolute path to an existing executable (checked above),
+        # passed as argv with no shell
+        proc = subprocess.run([binary, "-v", "-version"],  # nosec B603
                               capture_output=True, text=True, timeout=timeout,
                               env=build_env(binary=binary))
     except subprocess.TimeoutExpired:

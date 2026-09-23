@@ -1,7 +1,7 @@
 """Build the LISFLOOD-FP executable from source, or validate an existing one."""
 
 import os
-import subprocess
+import subprocess  # nosec B404 - used only to launch LISFLOOD-FP and CMake
 
 from qgis.core import (QgsProcessingException, QgsProcessingParameterBoolean,
                        QgsProcessingParameterFile, QgsProcessingParameterNumber)
@@ -172,7 +172,11 @@ class BuildBinaryAlgorithm(LisfloodAlgorithm):
     @staticmethod
     def _run(args, feedback, what):
         feedback.pushInfo("%s: %s" % (what, " ".join(args)))
-        proc = subprocess.Popen(args, stdout=subprocess.PIPE,
+        if not os.path.isabs(args[0]):
+            raise QgsProcessingException("%s: %r is not a full path." % (what, args[0]))
+        # args[0] is the absolute path to CMake, and argv goes to the OS directly with
+        # no shell
+        proc = subprocess.Popen(args, stdout=subprocess.PIPE,  # nosec B603
                                 stderr=subprocess.STDOUT, universal_newlines=True)
         for line in proc.stdout:
             if feedback.isCanceled():

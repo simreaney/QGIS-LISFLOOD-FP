@@ -17,7 +17,7 @@ what makes that recoverable.
 
 import os
 import signal
-import subprocess
+import subprocess  # nosec B404 - used only to launch LISFLOOD-FP and CMake
 import threading
 import time
 
@@ -52,7 +52,9 @@ def run_model(binary, par_path, sim_time, resroot="res", results_dir=None,
     argv = build_command(binary, par_path, extra_args=extra_args, verbose=True)
     env = build_env(threads=threads, binary=binary)
 
-    proc = subprocess.Popen(
+    # build_command insists on an absolute executable path, and argv goes to the OS
+    # directly with no shell
+    proc = subprocess.Popen(  # nosec B603
         argv, cwd=deck_dir, env=env, stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
 

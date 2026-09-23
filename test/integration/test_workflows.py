@@ -22,6 +22,13 @@ from qgis.PyQt.QtCore import QVariant
 QGIS_PREFIX = "/Applications/QGIS.app/Contents/MacOS"
 
 
+def check(condition, message="check failed"):
+    # explicit raise rather than assert, which python -O strips (and the QGIS
+    # plugin validator rejects)
+    if not condition:
+        raise AssertionError(message)
+
+
 def _start():
     QgsApplication.setPrefixPath(QGIS_PREFIX, True)
     app = QgsApplication([], False)
@@ -49,7 +56,7 @@ def _dem(work, nx, ny, cs, x0, y0, builder, epsg=27700):
     ds.GetRasterBand(1).SetNoDataValue(-9999)
     ds = None
     layer = QgsRasterLayer(path, "dem")
-    assert layer.isValid(), "test DEM failed to load"
+    check(layer.isValid(), "test DEM failed to load")
     return layer
 
 
@@ -103,15 +110,15 @@ def test_point_inflow_hydrograph():
 
     rows = _mass(deck)
     peak = max(float(r[6]) for r in rows)
-    assert abs(peak - 40.0) < 0.01, "asked for 40 m3/s, model reports %.3f" % peak
+    check(abs(peak - 40.0) < 0.01, "asked for 40 m3/s, model reports %.3f" % peak)
 
     # and the deck itself must carry the per-metre value, not the raw hydrograph
     bdy = open(os.path.join(deck, "bc.bdy")).read()
-    assert "\t4\t" in bdy.replace("\n", "\t"), "expected 40/10 = 4 m2/s in the .bdy"
+    check("\t4\t" in bdy.replace("\n", "\t"), "expected 40/10 = 4 m2/s in the .bdy")
 
     # dry before the wave arrives, wet after
     dry = [float(r[4]) for r in rows if float(r[0]) < 600]
-    assert max(dry) == 0.0, "domain wetted before the hydrograph started"
+    check(max(dry) == 0.0, "domain wetted before the hydrograph started")
     print("  point inflow: peak Qin = %.3f m3/s (asked 40) OK" % peak)
 
 
@@ -156,15 +163,15 @@ def test_channel_network_with_tributary():
         "OUTPUT": deck})
 
     river_text = open(os.path.join(deck, "channel.river")).read()
-    assert "Tribs 2" in river_text
-    assert "QOUT\t0" in river_text, "tributary did not declare its outlet"
-    assert "TRIB\t1" in river_text, "main channel did not receive the tributary"
-    assert "500.000000\t300.000000" in river_text, "junction was not snapped to the node"
+    check("Tribs 2" in river_text)
+    check("QOUT\t0" in river_text, "tributary did not declare its outlet")
+    check("TRIB\t1" in river_text, "main channel did not receive the tributary")
+    check("500.000000\t300.000000" in river_text, "junction was not snapped to the node")
 
     rows = _mass(deck)
     qin = float(rows[-1][6])
-    assert abs(qin - 40.0) < 0.01, \
-        "channel Q is m3/s and must not be rescaled; got %.3f for 30 + 10" % qin
+    check(abs(qin - 40.0) < 0.01,
+          "channel Q is m3/s and must not be rescaled; got %.3f for 30 + 10" % qin)
     print("  channel network: Qin = %.3f m3/s (30 + 10), junction snapped OK" % qin)
 
 

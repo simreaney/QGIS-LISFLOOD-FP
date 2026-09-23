@@ -26,8 +26,12 @@ from ..qt_compat import crs_to_esri_wkt
 # return values instead.
 try:
     gdal.UseExceptions()
-except Exception:                                    # noqa: BLE001 - see above
-    pass
+except Exception as exc:                             # noqa: BLE001 - see above
+    from qgis.core import Qgis, QgsMessageLog
+    QgsMessageLog.logMessage(
+        "Could not enable GDAL exceptions (%s); check GDAL_DRIVER_PATH. Raster "
+        "errors will be detected from return values instead." % exc,
+        "LISFLOOD-FP", Qgis.Warning)
 
 RESAMPLING = {
     "nearest": gdal.GRA_NearestNeighbour,
