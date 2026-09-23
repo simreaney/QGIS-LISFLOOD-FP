@@ -10,146 +10,17 @@ under both **QGIS 3.42 (Qt 5)** and **QGIS 4.0.1 (Qt 6)**.
 ## Installing
 
 The plugin does **not** ship LISFLOOD-FP. You need a source checkout; the plugin builds
-it for you.
+it for you. 
 
-1. Copy or symlink this folder into your QGIS profile's `python/plugins` directory:
+1. You need to get the source code for LISFLOOD-FP 8.2 from the public repositery at [Zenodo](https://zenodo.org/records/13121102). Download and unzip the folder. 
 
-   | Platform | Profile directory |
-   |---|---|
-   | macOS | `~/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins` |
-   | Linux | `~/.local/share/QGIS/QGIS3/profiles/default/python/plugins` |
-   | Windows | `%APPDATA%\QGIS\QGIS3\profiles\default\python\plugins` |
-
-2. Enable **LISFLOOD-FP** in Plugins → Manage and Install Plugins.
-3. Install the build prerequisites for your platform (below).
-4. Run **LISFLOOD-FP ▸ Setup ▸ Build or locate LISFLOOD-FP executable**, pointing it at
+2. Downlaod this repo as a zip and use the 'Install from Zip' option in the plugins
+3. Enable **LISFLOOD-FP** in Plugins → Manage and Install Plugins.
+4. Install the build prerequisites for your platform (below).
+5. Run **LISFLOOD-FP ▸ Setup ▸ Build or locate LISFLOOD-FP executable**, pointing it at
    your source checkout.
 
-Step 4 does the whole build for you and registers the result. The per-platform notes
-below say what it does and how to reproduce it by hand if you would rather.
-
----
-
-### macOS
-
-```bash
-brew install llvm libomp cmake
-```
-
-Apple's own compiler ships no `omp.h`, and LISFLOOD-FP includes it unconditionally, so a
-Homebrew LLVM toolchain is required. The plugin finds it under `/opt/homebrew/opt`
-(Apple Silicon) or `/usr/local/opt` (Intel).
-
-By hand:
-
-```bash
-cmake -S <source> -B build \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DCMAKE_C_COMPILER=/opt/homebrew/opt/llvm/bin/clang \
-  -DCMAKE_CXX_COMPILER=/opt/homebrew/opt/llvm/bin/clang++ \
-  -DOpenMP_ROOT=/opt/homebrew/opt/libomp \
-  -DCMAKE_MODULE_PATH=<plugin>/cmake_shims
-cmake --build build -j
-```
-
-Two macOS-specific things are going on.
-
-**The NUMA fix.** The stock `CMakeLists.txt` does `if (UNIX) find_package(NUMA
-REQUIRED)`. CMake's `UNIX` is true on macOS, but `libnuma` is Linux-only, so configure
-fails outright. The plugin supplies a replacement find-module on the command line
-(`-DCMAKE_MODULE_PATH=<plugin>/cmake_shims`) rather than editing your checkout. That
-works because `CMakeLists.txt` *appends* to `CMAKE_MODULE_PATH`, so the shim is found
-first, and it is safe because the only NUMA code in the model sits behind
-`#ifdef __unix__`, which Apple's compiler never defines. Your source tree stays
-byte-identical and survives a `git pull`. **This shim is applied on macOS only** —
-see the Linux note below.
-
-**Architecture on Apple Silicon.** QGIS 3.x is an x86_64 build, so it runs under
-Rosetta and everything it launches reports `x86_64` from `platform.machine()`. Left
-alone, CMake would configure an x86_64 build and then fail the OpenMP check against an
-arm64-only Homebrew libomp. The plugin reads `sysctl -n hw.optional.arm64` instead,
-which reports the real hardware, and passes `-DCMAKE_OSX_ARCHITECTURES` explicitly.
-If you build by hand from a terminal this does not arise, but set the flag anyway to be
-sure of what you get.
-
-No CUDA on macOS, so the GPU solvers are unavailable.
-
----
-
-### Linux
-
-```bash
-# Debian / Ubuntu
-sudo apt install build-essential cmake libnuma-dev libnetcdf-dev
-
-# Fedora / RHEL
-sudo dnf install gcc-c++ cmake numactl-devel netcdf-devel
-```
-
-`libnuma` is a genuine requirement here, not a workaround: the NUMA code at
-`lisflood2/lisflood_processing.cpp` is guarded by `#ifdef __unix__`, which GCC and Clang
-*do* define on Linux, so it really is compiled. **The plugin therefore does not apply
-the macOS shim on Linux** — doing so would quietly disable working NUMA support. If
-configure fails with a missing NUMA, install the package above rather than reaching for
-the shim.
-
-OpenMP comes with GCC and Clang, so no toolchain flags are needed. CMake needs to be
-3.13 or newer; on older distributions `sudo snap install cmake --classic` is the usual
-route.
-
-By hand:
-
-```bash
-cmake -S <source> -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-```
-
-The executable is `build/lisflood`.
-
-**CUDA.** Unlike macOS, Linux can build the GPU solvers. If the NVIDIA CUDA Toolkit is
-installed, CMake detects it automatically and compiles `fv2`, `acc_nugrid`, `mwdg2` and
-`hwfv1` alongside the CPU solvers; `lisflood -version` then reports `CUDA supported`.
-The plugin reads that line and stops greying out the GPU options. Note that `mwdg2` and
-`hwfv1` use a separate `.par` dialect that this plugin does not generate.
-
----
-
-### Windows
-
-Install **Visual Studio 2019 or newer** with the *Desktop development with C++*
-workload (the standalone *Build Tools for Visual Studio* is enough, and includes CMake).
-
-Windows needs no NUMA handling at all — `if (UNIX)` is simply false, so that block never
-runs. NetCDF needs nothing either: the headers and import library are vendored in
-`windep/netCDF4-64`, and CMake copies the runtime DLLs from the `DLL's` folder into the
-build directory.
-
-From a *Developer Command Prompt for VS*:
-
-```bat
-cmake -S <source> -B build -A x64
-cmake --build build --config Release --target lisflood
-```
-
-Two Windows-specific wrinkles, both of which the plugin handles:
-
-- **Visual Studio is a multi-config generator.** The executable is written to
-  `build\Release\lisflood.exe`, not `build\lisflood.exe`, and `--config Release` is
-  required at build time rather than `-DCMAKE_BUILD_TYPE`. The plugin passes `--config`
-  always (single-config generators ignore it) and searches the per-configuration
-  subdirectories when locating the result.
-- **The NetCDF DLLs land in the build root**, one level above the executable. The plugin
-  puts both directories on `PATH` for the child process. If you run `lisflood.exe`
-  yourself from a terminal and it fails to start, that is why — copy the DLLs next to
-  the executable or add `build\` to `PATH`.
-
-MSVC provides OpenMP through `/openmp`, which CMake wires up on its own. CUDA is
-detected automatically if the toolkit is present.
-
-> Windows and Linux instructions are derived from the project's own `README.md` and from
-> reading `CMakeLists.txt`; they have not been executed on this machine, where only the
-> macOS path is tested end to end. The plugin code paths for both are in place.
+Step 4 does the whole build of LISFLOOD-FP for you and registers the result. The per-platform notes below say what it does and how to reproduce it by hand if you would rather.
 
 ---
 
@@ -169,7 +40,7 @@ They also work headlessly:
 qgis_process run lisfloodfp:runmodel -- PAR_FILE=model.par THREADS=4
 ```
 
-## Things worth knowing
+## Notes:
 
 **Discharge is entered in m³/s.** LISFLOOD-FP wants it per metre of cell width, and the
 plugin converts — including hydrographs in a time series, where the divisor depends on
@@ -221,7 +92,7 @@ conversion applies only to `.bci` boundaries. A time series used by both a chann
 ## Not supported
 
 **GPU solvers.** `cuda`, `fv2`, `acc_nugrid`, `mwdg2` and `hwfv1` need a CUDA build.
-That is impossible on macOS, but perfectly possible on Linux and Windows — see those
+That is not possible on macOS, but is possible on Linux and Windows — see those
 sections. Where the binary reports `CUDA supported`, the plugin stops disabling the GPU
 options. `mwdg2` and `hwfv1` additionally use a separate `.par` dialect that the deck
 builder does not generate; run those from a hand-written deck.
@@ -232,34 +103,10 @@ builder does not generate; run those from a hand-written deck.
 **Sub-grid channels** (`SGCwidth` and friends) and **weirs** can be supplied through the
 advanced keyword field, but have no dedicated UI.
 
-## Testing
 
-The `core/` package has no QGIS imports, so it tests under any Python:
+## Licensing and References
 
-```bash
-python3 -m pytest test/ -q          # 19 unit tests, no QGIS needed
-```
+This plugin does not distribute LISFLOOD-FP and the repo on Zenodo uuses a GNU General Public License v2.0 only. 
 
-The integration tests need a real QGIS and a built binary:
-
-```bash
-GDAL_DRIVER_PATH= PROJ_LIB=/Applications/QGIS.app/Contents/Resources/proj \
-PYTHONPATH="$HOME/Library/Application Support/QGIS/QGIS3/profiles/default/python/plugins" \
-/Applications/QGIS.app/Contents/MacOS/bin/python3 test/integration/test_workflows.py
-```
-
-The round-trip test that matters most is end-to-end: build a deck asking for a known
-discharge, run it, and check the mass balance reports that same discharge back. That is
-what caught the QVAR conversion bug — a 40 m³/s hydrograph arriving as 400 — and neither
-the reversed-column nor the unit error produces any message from the model itself.
-
-The channel writer is additionally checked against the shipped `T007_CTBranchFine` case:
-regenerating that four-segment branching network through the plugin and re-running it
-produces byte-identical mass balance and maximum-depth grids.
-
-## Licensing
-
-This plugin does not distribute LISFLOOD-FP. The fork it was developed against carries a
-Bristol University copyright notice and **no top-level licence file**, so redistributing
-a compiled binary is not something to assume is permitted — the plugin builds from your
-own checkout instead. Worth resolving with the code owners before any public release.
+LISFLOOD-FP developers. (2024). LISFLOOD-FP v8.2 hydrodynamic model (Version 8.2) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.13121102
+Bates, P. D., & de Roo, A. P. J. (2000). A simple raster-based model for flood inundation simulation. Journal of Hydrology, 236(1-2), 54-77
