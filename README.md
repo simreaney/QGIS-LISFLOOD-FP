@@ -106,7 +106,7 @@ advanced keyword field, but have no dedicated UI.
 
 ## Licensing and References
 
-This plugin does not distribute LISFLOOD-FP and the repo on Zenodo uuses a GNU General Public License v2.0 only. 
-
-LISFLOOD-FP developers. (2024). LISFLOOD-FP v8.2 hydrodynamic model (Version 8.2) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.13121102
+This plugin does not distribute the source code or the binaries for LISFLOOD-FP. The repo on Zenodo uses a GNU General Public License v2.0 only.  
+References:
+LISFLOOD-FP developers. (2024). LISFLOOD-FP v8.2 hydrodynamic model (Version 8.2) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.13121102.  
 Bates, P. D., & de Roo, A. P. J. (2000). A simple raster-based model for flood inundation simulation. Journal of Hydrology, 236(1-2), 54-77
