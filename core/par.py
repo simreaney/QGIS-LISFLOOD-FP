@@ -224,7 +224,7 @@ class ParFile(object):
                 lines.append(name if value is None else "%-24s %s" % (name, value))
         if self.extra_text.strip():
             lines += ["", "# --- additional keywords ---"]
-            lines += [l for l in self.extra_text.splitlines() if l.strip()]
+            lines += [line for line in self.extra_text.splitlines() if line.strip()]
         return "\n".join(lines) + "\n"
 
     def write(self, path):

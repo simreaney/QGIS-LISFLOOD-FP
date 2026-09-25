@@ -63,7 +63,7 @@ def _dem(work, nx, ny, cs, x0, y0, builder, epsg=27700):
 def _mass(deck):
     path = os.path.join(deck, "results", "res.mass")
     with open(path) as fh:
-        return [l.split() for l in fh if l.strip() and not l.startswith("Time")]
+        return [line.split() for line in fh if line.strip() and not line.startswith("Time")]
 
 
 def test_point_inflow_hydrograph():

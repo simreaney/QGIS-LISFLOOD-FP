@@ -19,6 +19,8 @@ repository=https://github.com/simreaney/QGIS-LISFLOOD-FP
 homepage=https://github.com/simreaney/QGIS-LISFLOOD-FP
 
 changelog=
+    0.1.4
+    - bug fix
     0.1.3
     - Typo correction
     0.1.2
@@ -37,7 +39,7 @@ tags=hydrology,flood,inundation,hydraulic,raster,lisflood,modelling
 
 category=Analysis
 icon=icons/lisflood.svg
-experimental=True
+experimental=False
 deprecated=False
 hasProcessingProvider=yes
 
