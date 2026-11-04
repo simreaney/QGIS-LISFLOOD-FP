@@ -176,7 +176,12 @@ def adjudicate(results_dir, resroot, sim_time, exit_code, crashed=False, log_lin
                        "(%.0f%%)." % (last_t, sim_time, 100.0 * last_t / max(sim_time, 1)),
                        "All outputs up to that point were written.", warnings)
 
-    if sim_time and last_t < 0.999 * sim_time:
+    # The model writes a mass record every massint but not one at sim_time itself, so a
+    # complete run can end a whole interval short of it -- with the automatic
+    # sim_time/500, that is 0.2%. A run that really stopped that close to the end is
+    # still caught below: the .max grid is written only once the run completes.
+    interval = rows[-1][0] - rows[-2][0] if len(rows) > 1 else 0.0
+    if sim_time and last_t + 1.5 * interval < 0.999 * sim_time:
         return Outcome(TRUNCATED,
                        "The run ended early, at model time %g s of %g s (%.0f%%)."
                        % (last_t, sim_time, 100.0 * last_t / max(sim_time, 1)),

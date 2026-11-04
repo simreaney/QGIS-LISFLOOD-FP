@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core import bc, gridio, keywords as kw
 from core.par import ParFile
 from core.progress import classify, MassProgress
-from core.results import died_on_signal, discover
+from core.results import COMPLETED, TRUNCATED, adjudicate, died_on_signal, discover
 
 
 def check(condition, message="check failed"):
@@ -267,3 +267,25 @@ def test_channel_discharge_is_not_converted():
     from core.river import point as P, format_point
     line = format_point(P(0, 0, 20, 0.035, 10, "QFIX", 30.0))
     check(line.split()[-2:] == ["QFIX", "30"])     # written through unchanged
+
+
+def test_complete_run_may_end_one_mass_interval_short():
+    """The last mass record falls one massint before sim_time; that is not truncation."""
+    work = tempfile.mkdtemp(prefix="lf_adj_")
+    fields = "1.0 1.0 {t:.0f} 1000.0 50.0 1.0 0.0 0.5 0.0 0.0 0.0"
+
+    def write_mass(last):
+        with open(os.path.join(work, "res.mass"), "w") as fh:
+            fh.write("Time Tstep MinTstep NumTsteps Area Vol Qin Hds Qout Qerror Verror Rain-Inf+Evap\n")
+            t = 43.0
+            while t <= last:
+                fh.write("%.3f %s\n" % (t, fields.format(t=t)))
+                t += 43.0
+
+    write_mass(21557)
+    open(os.path.join(work, "res.max"), "w").close()
+    check(adjudicate(work, "res", 21600, 0).status == COMPLETED,
+          "a run whose last record is one interval short must count as complete")
+    write_mass(20000)
+    check(adjudicate(work, "res", 21600, 0).status == TRUNCATED,
+          "a run that stopped well short of sim_time must still count as truncated")
