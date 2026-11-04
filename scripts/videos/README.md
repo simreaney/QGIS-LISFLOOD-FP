@@ -2,7 +2,8 @@
 
 One silent, captioned walkthrough of the plugin in two formats: 16:9 in 4K for
 YouTube (`out/landscape/`) and 9:16 at 1080 × 1920 for Instagram Reels
-(`out/vertical/`). `out/youtube-chapters.txt` has the chapters for the description.
+(`out/vertical/`). `youtube-description.txt` is the YouTube description; the
+chapters in it come from `out/youtube-chapters.txt`, which the render writes.
 
 Nothing on screen is mocked up. `drive.py` runs inside the real QGIS 4 application,
 offscreen at 4x with a throwaway profile that has this checkout installed as the
@@ -34,6 +35,7 @@ encode, takes longer.
 | `film.py` | Lays out and renders a film: camera, cursor, notes, captions, cards. |
 | `make_film.py` | The walkthrough's timeline; renders both formats. |
 | `run_qgis.sh` | Runs a script in QGIS's own Python (GDAL, PROJ, PyQt). |
+| `youtube-description.txt` | The YouTube description, chapters included. Update the chapters if the timeline changes. |
 
 ## Things to know
 
