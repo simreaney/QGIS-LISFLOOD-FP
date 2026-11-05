@@ -1,24 +1,24 @@
-Build, run and map LISFLOOD-FP flood inundation models without leaving QGIS. This two-minute walkthrough of the open-source LISFLOOD-FP for QGIS plugin goes from ordinary map layers to an animated flood.
+Build, run and map LISFLOOD-FP flood inundation models without leaving QGIS. This two-minute walkthrough of the open-source LISFLOOD-FP for QGIS plugin goes from ordinary map layers to an animated flood on the River Eden at Appleby-in-Westmorland.
 
 There's no narration. On-screen captions explain each step.
 
 Chapters
 0:00 The inputs
-0:20 Set up once: build LISFLOOD-FP
-0:32 Set up a model in the panel
-1:15 Build and run
-1:27 Results, and the flood through time
-1:50 Processing tools
+0:23 Set up once: build LISFLOOD-FP
+0:35 Set up a model in the panel
+1:18 Build and run
+1:30 Results, and the flood through time
+1:53 Processing tools
 
 What you'll see
-• The inputs are ordinary QGIS layers: a DEM, an inflow point and its hydrograph.
+• The inputs are ordinary QGIS layers: a 1 m DTM and an inflow point.
 • Point the plugin at the LISFLOOD-FP source code once, and it compiles the model for you.
-• Set up the model in the plugin's panel. You choose the DEM and Manning's n, add a point inflow with a hydrograph in m³/s (the plugin converts it to the per-metre discharge LISFLOOD-FP expects), and add an automatic outflow boundary.
-• Build and run six hours of model time. The model runs in the background, and the panel shows a live mass balance: wetted area, volume, and flow in and out.
+• Set up the model in the plugin's panel. You choose the DEM, a 5 m model cell size and Manning's n, add a point inflow of 150 m³/s (the plugin converts it to the per-metre discharge LISFLOOD-FP expects), and add an automatic outflow boundary.
+• Build and run three hours of model time. The model runs in the background, and the panel shows a live mass balance: wetted area, volume, and flow in and out.
 • The results load as styled, georeferenced layers: maximum depth, depth through time, time of first inundation and more. The QGIS Temporal Controller steps through the flood.
 • Every step is also a Processing tool, so you can use it in graphical models, batch runs and qgis_process.
 
-The valley in this video is synthetic, made for the demonstration. It's a 4.8 × 3.2 km, 10 m DEM with a meandering river and a village of 148 buildings, and the flood hydrograph peaks at 250 m³/s.
+The model in this video uses a 1 m DTM of Appleby-in-Westmorland, Cumbria, covering 1.6 × 1.4 km of the River Eden, run on a 5 m grid with a steady inflow of 150 m³/s. Flood defences are not represented, so this is a demonstration of the plugin, not a flood map of Appleby.
 
 Get the plugin
 In QGIS, go to Plugins ▸ Manage and Install Plugins and search for "QGIS-LISFLOOD-FP".

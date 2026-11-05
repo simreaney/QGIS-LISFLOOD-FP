@@ -51,6 +51,9 @@ def run_model(binary, par_path, sim_time, resroot="res", results_dir=None,
 
     argv = build_command(binary, par_path, extra_args=extra_args, verbose=True)
     env = build_env(threads=threads, binary=binary)
+    # an earlier run's .max may still be in the folder; adjudicate needs to tell it
+    # from one this run writes
+    max_before = R.output_stamp(results_dir, resroot)
 
     # build_command insists on an absolute executable path, and argv goes to the OS
     # directly with no shell
@@ -118,7 +121,7 @@ def run_model(binary, par_path, sim_time, resroot="res", results_dir=None,
             [])
     else:
         outcome = R.adjudicate(results_dir, resroot, sim_time, exit_code,
-                               crashed=False, log_lines=lines)
+                               crashed=False, log_lines=lines, max_before=max_before)
     return RunResult(outcome, exit_code, lines)
 
 

@@ -15,8 +15,8 @@ import subprocess
 from dataclasses import dataclass
 
 from qgis.PyQt.QtCore import QPointF, QRectF, Qt
-from qgis.PyQt.QtGui import (QColor, QFont, QFontMetricsF, QImage, QPainter, QPen,
-                             QPolygonF)
+from qgis.PyQt.QtGui import (QColor, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter,
+                             QPen, QPolygonF)
 
 FPS = 30
 STAGE_W, STAGE_H = 1920, 1080
@@ -66,6 +66,20 @@ LANDSCAPE = Format("landscape", 1920, 1080, 44, 1500, 960, 58, 76, (72, 750), 15
 VERTICAL = Format("vertical", 1080, 1920, 50, 820, 510, 420, 70, (60, 250), 900, (60, 370),
                   620, 92, header=330, note_title=40, note_body=34, note_width=860)
 FORMATS = {f.name: f for f in (LANDSCAPE, VERTICAL)}
+
+
+@dataclass(frozen=True)
+class Cover:
+    """An opening slide that is also the thumbnail: a full-bleed picture and big type.
+    In 9:16 the type sits in the middle band that both a Reel's 3:4 grid crop and its
+    on-screen buttons leave clear."""
+    eyebrow: str
+    title: str
+    subtitle: str
+    detail: str
+    images: dict              # format name -> a picture made at that format's output size
+    title_sizes: dict = None  # format name -> the title's pixel size, for a longer title
+    shade_top: float = 880    # 9:16: where the shade under the type starts, for a busy picture
 
 
 def ease(u):
@@ -163,12 +177,18 @@ class Film:
         self.highlights = []    # (t0, t1, rect)
         self.captions = []      # (t0, t1, text, {format name: anchor})
         self.badges = []        # (t0, t1, text)
-        self.tickers = []       # (t0, t1, label, [(t, text), ...])
+        self.tickers = []       # (t0, t1, label, [(t, text), ...], slot)
         self.notes = []         # (t0, t1, title, text, target rect or None)
+        self.covers = []        # (t0, t1, Cover)
         self.title_window = (0.15, 2.85)
         self.end_start = duration - 3.0
+        self.capture = None     # the folder png() finds captured states in
         self._cache = {}
         self._stage = {}
+
+    def png(self, name):
+        import os
+        return os.path.join(self.capture, f"{name}.png")
 
     # ── Script ─────────────────────────────────────────────────────────
 
@@ -201,10 +221,16 @@ class Film:
     def badge(self, t0, t1, text):
         self.badges.append((t0, t1, text))
 
-    def ticker(self, t0, t1, label, steps):
+    def ticker(self, t0, t1, label, steps, slot=0):
         """A readout that changes in place, e.g. the model time as a flood plays: *steps*
-        is [(t, text)], each shown from its t. It fades in and out only at t0 and t1."""
-        self.tickers.append((t0, t1, label, sorted(steps)))
+        is [(t, text)], each shown from its t. It fades in and out only at t0 and t1.
+        A second readout (slot 1) sits beside the first."""
+        self.tickers.append((t0, t1, label, sorted(steps), slot))
+
+    def cover(self, t0, t1, cover):
+        """A full-frame opening slide, made to work as the thumbnail too, over everything
+        until it fades out at *t1*."""
+        self.covers.append((t0, t1, cover))
 
     def note(self, t0, t1, title, text, target=None):
         """A callout beside *target* (a stage rectangle) naming it and saying what it is."""
@@ -389,7 +415,8 @@ class Film:
             painter.setOpacity(1.0)
 
     def _draw_tickers(self, painter, t, fmt):
-        for t0, t1, label, steps in self.tickers:
+        right = None  # where the last readout drawn ends, for one in the next slot
+        for t0, t1, label, steps, slot in sorted(self.tickers, key=lambda ticker: ticker[4]):
             a = fade(t, t0, t1, 0.2)
             if a <= 0:
                 continue
@@ -402,6 +429,9 @@ class Film:
             width = max(QFontMetricsF(font).horizontalAdvance(text),
                         QFontMetricsF(small).horizontalAdvance(label)) + 64
             x, y = fmt.badge_origin if fmt.badge_origin is not None else (fmt.width - 64 - width, 56)
+            if slot and right is not None:
+                x = right + 20
+            right = x + width
             box = QRectF(x, y, width, 124)
             painter.setOpacity(a)
             painter.setPen(Qt.PenStyle.NoPen)
@@ -573,6 +603,52 @@ class Film:
             y += bounds.height() + 26
         painter.setOpacity(1.0)
 
+    def _draw_cover(self, painter, t, fmt):
+        for t0, t1, cover in self.covers:
+            if not t0 <= t <= t1:
+                continue
+            painter.setOpacity(min(1.0, (t1 - t) / 0.45))  # holds, then fades into the film
+            frame = QRectF(0, 0, fmt.width, fmt.height)
+            painter.fillRect(frame, CARD)
+            painter.drawImage(frame, self._image(cover.images[fmt.name]))
+            # Shade the side the type goes on, so it reads over any picture. The type is
+            # sized to be read in a thumbnail a few centimetres wide.
+            if fmt is LANDSCAPE:
+                shade = QLinearGradient(0, 0, 1180, 0)
+                stops = ((0.0, 0.94), (0.5, 0.82), (1.0, 0.0))
+                left, top, widths, sizes, gaps = 110, 250, (900, 700), (30, 176, 52, 30), (34, 24)
+            else:
+                shade = QLinearGradient(0, cover.shade_top, 0, cover.shade_top + 420)
+                stops = ((0.0, 0.0), (1.0, 0.92))
+                left, top, widths, sizes, gaps = 72, 1020, (936, 936), (28, 140, 44, 27), (22, 22)
+            for at, alpha in stops:
+                colour = QColor(CARD)
+                colour.setAlphaF(alpha)
+                shade.setColorAt(at, colour)
+            painter.fillRect(frame, shade)
+            flags = int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop) | WRAP
+            eyebrow = self._font(sizes[0], QFont.Weight.DemiBold, 4.0)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(ACCENT)
+            painter.drawRoundedRect(QRectF(left, top + sizes[0] / 2 - 3, 52, 7), 3, 3)
+            painter.setFont(eyebrow)
+            painter.setPen(MUTED)
+            painter.drawText(QRectF(left + 72, top - 10, widths[0], sizes[0] + 20),
+                             int(Qt.AlignmentFlag.AlignVCenter), cover.eyebrow)
+            y = top + sizes[0] + 34
+            title_size = (cover.title_sizes or {}).get(fmt.name, sizes[1])
+            for text, size, weight, colour, width, gap in (
+                    (cover.title, title_size, QFont.Weight.Black, QColor(255, 255, 255), widths[0], gaps[0]),
+                    (cover.subtitle, sizes[2], QFont.Weight.DemiBold, QColor("#cfe6f7"), widths[1], gaps[1]),
+                    (cover.detail, sizes[3], QFont.Weight.Normal, MUTED, widths[0], 0)):
+                font = self._font(size, weight, -size * 0.02 if size > 100 else 0.0)
+                bounds = QFontMetricsF(font).boundingRect(QRectF(0, 0, width, 1200), flags, text)
+                painter.setFont(font)
+                painter.setPen(colour)
+                painter.drawText(QRectF(left, y, width, bounds.height() + 10), flags, text)
+                y += bounds.height() + gap
+            painter.setOpacity(1.0)
+
     def frame(self, t, fmt):
         image = QImage(fmt.width * fmt.ratio, fmt.height * fmt.ratio, QImage.Format.Format_RGB32)
         image.fill(PAPER)
@@ -591,8 +667,29 @@ class Film:
         self._draw_tickers(painter, t, fmt)
         self._draw_title(painter, t, fmt)
         self._draw_end(painter, t, fmt)
+        self._draw_cover(painter, t, fmt)
         painter.end()
         return image
+
+    def thumbnails(self, folder, slug, t=1.0):
+        """The opening slide, held, as pictures: 1920 x 1080 for YouTube (well under its
+        2 MB limit) and 1080 x 1920 for an Instagram cover."""
+        import os
+        os.makedirs(folder, exist_ok=True)
+        paths = []
+        for fmt, width, name in ((LANDSCAPE, 1920, "youtube"), (VERTICAL, 1080, "instagram")):
+            path = self.still(t, fmt, os.path.join(folder, f"{slug}-{name}.jpg"), width=width, quality=92)
+            print("thumbnail", path, f"{os.path.getsize(path) / 1e6:.2f} MB")
+            paths.append(path)
+        return paths
+
+    def still(self, t, fmt, path, width=None, quality=90):
+        """One frame as a picture file, scaled to *width* if given: a thumbnail, say."""
+        image = self.frame(t, fmt)
+        if width:
+            image = image.scaledToWidth(width, Qt.TransformationMode.SmoothTransformation)
+        image.save(path, quality=quality)
+        return path
 
     def render(self, path, fmt, stills=()):
         command = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgra",
@@ -621,3 +718,60 @@ class Film:
             if still_dir:
                 stills = [(t, os.path.join(still_dir, f"{slug}_{fmt.name}_{t:04.1f}.png")) for t in still_times]
             self.render(os.path.join(folder, f"{slug}.mp4"), fmt, stills)
+
+
+# ── Timeline helpers, shared by the films' scripts ─────────────────────────
+
+class Clock:
+    def __init__(self, t=0.0):
+        self.t = t
+
+    def wait(self, seconds):
+        self.t += seconds
+        return self.t
+
+
+def left_part(rect, inset=14):
+    x, y, w, h = rect
+    return (x + inset, y + h / 2)
+
+
+def cut(film, t, landscape=None, vertical=None, duration=0.8):
+    if landscape is not None:
+        film.camera("landscape", moves=[(t, t + duration, landscape)])
+    if vertical is not None:
+        film.camera("vertical", moves=[(t, t + duration, vertical)])
+
+
+def walk(film, clock, items, per=3.0, gap=0.2):
+    """Point at each control, box it and say what it is; click it if asked.
+
+    Each item is (rect, title, text) and optionally the state shown once it is
+    reached (or clicked), whether it is clicked, a state that follows, and the
+    (16:9, 9:16) framings to move to as it is reached (either may be None).
+    """
+    for item in items:
+        rect, title, text = item[:3]
+        state = item[3] if len(item) > 3 else None
+        click = item[4] if len(item) > 4 else False
+        after = item[5] if len(item) > 5 else None
+        views = item[6] if len(item) > 6 else (None, None)
+        t = clock.t
+        cut(film, t - 0.3, *views)
+        film.move_cursor(t, t + 0.5, left_part(rect, min(18, rect[2] / 2)) if rect[2] > 300 else centre(rect))
+        if click:
+            film.click(t + 0.55)
+        if state:
+            film.state(t + (0.62 if click else 0.1), film.png(state), crossfade=0.12)
+        if after:
+            film.state(t + 1.7, film.png(after), crossfade=0.15)
+        film.highlight(t + 0.45, t + per, rect, pad=3)
+        film.note(t + 0.5, t + per, title, text, rect)
+        clock.wait(per + gap)
+
+
+def write_chapters(path, chapters):
+    """YouTube chapters, for the description: one 'm:ss title' line each."""
+    with open(path, "w") as handle:
+        for t, title in chapters:
+            handle.write(f"{mmss(t)} {title}\n")

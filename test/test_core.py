@@ -5,7 +5,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core import bc, gridio, keywords as kw
 from core.par import ParFile
 from core.progress import classify, MassProgress
-from core.results import COMPLETED, TRUNCATED, adjudicate, died_on_signal, discover
+from core.results import (COMPLETED, TRUNCATED, adjudicate, died_on_signal, discover,
+                          output_stamp)
 
 
 def check(condition, message="check failed"):
@@ -269,23 +270,59 @@ def test_channel_discharge_is_not_converted():
     check(line.split()[-2:] == ["QFIX", "30"])     # written through unchanged
 
 
-def test_complete_run_may_end_one_mass_interval_short():
-    """The last mass record falls one massint before sim_time; that is not truncation."""
+def _write_mass(work, massint, count):
+    """A mass file with records at massint, 2*massint, ... count*massint."""
+    with open(os.path.join(work, "res.mass"), "w") as fh:
+        fh.write("Time Tstep MinTstep NumTsteps Area Vol Qin Hds Qout Qerror Verror Rain-Inf+Evap\n")
+        for k in range(1, count + 1):
+            fh.write("%.3f 1.0 1.0 %d 1000.0 50.0 1.0 0.0 0.5 0.0 0.0 0.0\n" % (k * massint, k))
+
+
+def _write_max(work, text="fresh"):
+    with open(os.path.join(work, "res.max"), "w") as fh:
+        fh.write(text)
+
+
+def test_mass_tolerance_is_between_one_and_two_intervals():
+    """One massint short is a complete run; two short is truncated, for any sim_time."""
+    for sim_time in (1000, 3600, 21600):
+        massint = sim_time / 500.0                    # the plugin's automatic massint
+        work = tempfile.mkdtemp(prefix="lf_adj_")
+        _write_max(work)
+        _write_mass(work, massint, 499)               # last record one interval short
+        check(adjudicate(work, "res", sim_time, 0).status == COMPLETED,
+              "sim_time %g: one interval short must count as complete" % sim_time)
+        _write_mass(work, massint, 498)               # two intervals short
+        check(adjudicate(work, "res", sim_time, 0).status == TRUNCATED,
+              "sim_time %g: two intervals short must count as truncated" % sim_time)
+
+
+def test_missing_max_inside_the_tolerance_is_truncated():
     work = tempfile.mkdtemp(prefix="lf_adj_")
-    fields = "1.0 1.0 {t:.0f} 1000.0 50.0 1.0 0.0 0.5 0.0 0.0 0.0"
+    _write_mass(work, 43.2, 499)
+    out = adjudicate(work, "res", 21600, 0)
+    check(out.status == TRUNCATED and "no maximum-depth grid" in out.message,
+          "reaching the end of the mass file without a .max must count as truncated")
 
-    def write_mass(last):
-        with open(os.path.join(work, "res.mass"), "w") as fh:
-            fh.write("Time Tstep MinTstep NumTsteps Area Vol Qin Hds Qout Qerror Verror Rain-Inf+Evap\n")
-            t = 43.0
-            while t <= last:
-                fh.write("%.3f %s\n" % (t, fields.format(t=t)))
-                t += 43.0
 
-    write_mass(21557)
-    open(os.path.join(work, "res.max"), "w").close()
-    check(adjudicate(work, "res", 21600, 0).status == COMPLETED,
-          "a run whose last record is one interval short must count as complete")
-    write_mass(20000)
+def test_max_left_by_an_earlier_run_does_not_count():
+    """A run that stops inside the tolerance must not be vouched for by an old .max."""
+    work = tempfile.mkdtemp(prefix="lf_adj_")
+    _write_max(work, "earlier run")
+    before = output_stamp(work, "res")
+    _write_mass(work, 43.2, 499)
+    out = adjudicate(work, "res", 21600, 1, max_before=before)
+    check(out.status == TRUNCATED and "earlier run" in out.detail,
+          "an unchanged .max from an earlier run must not make the run complete")
+    _write_max(work, "this run's grid")             # the run rewrote it
+    check(adjudicate(work, "res", 21600, 0, max_before=before).status == COMPLETED,
+          "a .max the run rewrote must count")
+    check(output_stamp(work, "missing") is None)
+
+
+def test_single_mass_record_gets_no_tolerance():
+    work = tempfile.mkdtemp(prefix="lf_adj_")
+    _write_max(work)
+    _write_mass(work, 43.2, 1)
     check(adjudicate(work, "res", 21600, 0).status == TRUNCATED,
-          "a run that stopped well short of sim_time must still count as truncated")
+          "a run with one mass record has no measurable interval and stopped early")

@@ -6,8 +6,10 @@ Two things make this less trivial than globbing.
 **Exit codes are not trustworthy.** The model uses exit(-1) for a missing .par or DEM,
 exit(1) for option conflicts, and returns 0 after the `kill` wall-clock guard fires --
 so a run cut short by the guard is indistinguishable from a complete one by exit code
-alone. Success is therefore adjudicated on evidence: the expected files exist and the
-mass file reached sim_time.
+alone. Success is therefore adjudicated on evidence: the mass file reached sim_time and
+the run wrote its final grids. "Wrote" matters: the model overwrites outputs but never
+deletes them, so a .max left in the folder by an earlier run would otherwise vouch for
+a run that stopped early.
 
 **A run can succeed and still be wrong.** Silently clamped boundary coordinates, a
 .bci name with no matching .bdy block, and a point source on a nodata cell all give
@@ -102,8 +104,26 @@ def died_on_signal(exit_code):
     return exit_code < 0 or exit_code in range(129, 160)
 
 
-def adjudicate(results_dir, resroot, sim_time, exit_code, crashed=False, log_lines=()):
-    """Decide whether a run really succeeded, on evidence rather than exit code."""
+def output_stamp(results_dir, resroot, ext=".max"):
+    """Identify an output file as it stands now: (mtime_ns, size), or None if absent.
+
+    Take it before launching a run and pass it to adjudicate() as `max_before`; an
+    unchanged stamp afterwards means the run never rewrote the file.
+    """
+    try:
+        st = os.stat(os.path.join(results_dir, resroot + ext))
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
+def adjudicate(results_dir, resroot, sim_time, exit_code, crashed=False, log_lines=(),
+               max_before=None):
+    """Decide whether a run really succeeded, on evidence rather than exit code.
+
+    `max_before` is output_stamp() of the .max grid taken before the run started. Pass
+    it whenever the results folder may hold an earlier run's outputs.
+    """
     warnings = []
     crashed = bool(crashed) or died_on_signal(exit_code)
     text = "\n".join(log_lines)
@@ -176,23 +196,30 @@ def adjudicate(results_dir, resroot, sim_time, exit_code, crashed=False, log_lin
                        "(%.0f%%)." % (last_t, sim_time, 100.0 * last_t / max(sim_time, 1)),
                        "All outputs up to that point were written.", warnings)
 
-    # The model writes a mass record every massint but not one at sim_time itself, so a
-    # complete run can end a whole interval short of it -- with the automatic
-    # sim_time/500, that is 0.2%. A run that really stopped that close to the end is
-    # still caught below: the .max grid is written only once the run completes.
-    interval = rows[-1][0] - rows[-2][0] if len(rows) > 1 else 0.0
-    if sim_time and last_t + 1.5 * interval < 0.999 * sim_time:
+    # The model writes a mass record each time model time passes the next multiple of
+    # massint, but none at sim_time itself, so a complete run's last record can be a
+    # whole interval short of the end. Allow 1.5 intervals, taking the interval as the
+    # mean record spacing, since any single gap is off by up to one timestep. With one
+    # record there is no spacing to measure, so no allowance. A run that really
+    # stopped inside the allowance is still caught below, by the .max check: the
+    # model writes that grid only after its time loop ends.
+    interval = (last_t - rows[0][0]) / (len(rows) - 1) if len(rows) > 1 else 0.0
+    if sim_time and last_t + 1.5 * interval < sim_time:
         return Outcome(TRUNCATED,
                        "The run ended early, at model time %g s of %g s (%.0f%%)."
                        % (last_t, sim_time, 100.0 * last_t / max(sim_time, 1)),
                        "LISFLOOD-FP writes some errors only to standard output and is "
                        "often terse; see the full log.", warnings)
 
-    if not os.path.exists(os.path.join(results_dir, resroot + ".max")):
+    max_now = output_stamp(results_dir, resroot)
+    if max_now is None or max_now == max_before:
         return Outcome(TRUNCATED,
-                       "The mass file reached the end but no maximum-depth grid was "
-                       "written, so the run did not complete its final output step.",
-                       "", warnings)
+                       "The mass file reached the end but this run wrote no "
+                       "maximum-depth grid, so it did not complete its final output "
+                       "step.",
+                       "" if max_now is None else
+                       "The %s.max in the results folder is left over from an earlier "
+                       "run." % resroot, warnings)
 
     return Outcome(COMPLETED,
                    "Run completed: model time %g s." % last_t, "", warnings)
